@@ -1,10 +1,10 @@
 import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui';
-
-// import 'package:audioplayers/audioplayers.dart';
+import 'dart:developer' as dev;
+import 'package:audioplayers/audioplayers.dart';
+import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/material.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:wheel_of_fortune/data/data.dart';
 
 class Game extends StatefulWidget {
@@ -67,18 +67,34 @@ class _WheelWidgetState extends State<WheelWidget>
   // late AudioCache _audioCache;
   // late final AudioPlayer _player = AudioPlayer();
   // var assetSource = AssetSource('tick.mp3');
-  final _player = AudioPlayer(); // Create a player
 
   ByteData? data;
+  final _players = <AudioPlayer>[];
+  late AudioPool? pool;
+  init() async {
+    pool = await FlameAudio.createPool(
+      'tick.mp3',
+      minPlayers: 1,
+      maxPlayers: 1,
+    );
+  }
+
+  void playTick() {
+    if (pool == null) {
+      FlameAudio.play('tick.mp3');
+    } else {
+      pool!.start();
+
+      dev.log('pool!.start()');
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-
-    _player.setAsset(// Load a URL
-        'assets/tick.mp3');
-
+    init();
     // _audioCache = AudioCache();
-    // _audioCache.loadAsset('assets/tick.mp3').then((value) => data = value);
+    // _audioCache.loadAsset('tick.mp3');
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 10), // Adjust the duration as needed
@@ -99,43 +115,32 @@ class _WheelWidgetState extends State<WheelWidget>
   void _startSpinning() {
     _animationController.reset();
     _animationController.forward();
-    // var t = 0.5 + random.nextDouble() / 2;
 
     var randomSurplusAnimationValue = random.nextDouble();
-    var randomExtraAngle = randomSurplusAnimationValue * 2 * pi;
     var v0 = 2 * pi / 1;
     var a = v0 /
         ((1 + randomSurplusAnimationValue) *
             _animationController.duration!.inSeconds);
-
-    print('t=$randomSurplusAnimationValue r=$randomExtraAngle');
+    Set rec = {};
     _animationController.addListener(() async {
       setState(() {
-        // if (_animationController.value >= t) {
-        //   _animationController.stop();
-        //   return;
-        // }
         var time = (_animationController.value *
             _animationController.duration!.inSeconds);
-        _rotationAngle =
-            // 20 * pi * _animationController.value + randomExtraAngle;
-            v0 * time - 0.5 * a * time * time;
-        // print(_rotationAngle / pi);
+        _rotationAngle = v0 * time - 0.5 * a * time * time;
       });
       var d = _rotationAngle / (2 * pi / wheelSections.length);
+      var truncateToDouble = d.truncateToDouble();
       if (_animationController.value > 0.0 &&
           _animationController.value < 1.0 &&
-          (d - d.truncateToDouble()) < 0.1) {
-        print('d=$d');
-        if (playing) {
+          (d - truncateToDouble) < 0.2) {
+        if (rec.contains(truncateToDouble)) {
           return;
         }
-        playing = true;
-        await _player.seek(Duration.zero);
-        await _player.play();
-        playing = false;
-        // _player.play(
-        //     assetSource); // Replace 'ticking_sound.mp3' with your sound file
+
+        rec.add(truncateToDouble);
+        dev.log('d=$d}');
+
+        playTick();
       }
     });
   }
@@ -143,9 +148,15 @@ class _WheelWidgetState extends State<WheelWidget>
   @override
   void dispose() {
     _animationController.dispose();
-    _player.dispose();
-
+    emptyPlayers();
     super.dispose();
+  }
+
+  void emptyPlayers() {
+    for (var element in _players) {
+      element.dispose();
+    }
+    _players.clear();
   }
 
   @override
@@ -156,6 +167,7 @@ class _WheelWidgetState extends State<WheelWidget>
         if (_animationController.value > 0 && _animationController.value < 1) {
           return;
         }
+        emptyPlayers();
         _startSpinning();
       },
       child: AnimatedBuilder(
